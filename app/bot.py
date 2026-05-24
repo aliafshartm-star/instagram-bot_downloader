@@ -4,6 +4,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import yt_dlp
 from threading import Thread
 from flask import Flask
+import requests
 
 # ================= ⚙️ دریافت تنظیمات از ENV رندر =================
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
@@ -131,9 +132,23 @@ def handle_links(message):
         return
 
     if state == "insta_profile":
-        # استخراج آیدی خالص
-        username = text.replace("https://", "").replace("instagram.com/", "").split("/")[0].replace("@", "")
+        # تمیز کردن یوزرنیم ورودی کاربر
+        username = text.replace("https://", "").replace("http://", "").replace("instagram.com/", "").replace("www.", "").split("/")[0].replace("@", "").strip()
         bot.reply_to(message, f"⏳ در حال دریافت عکس پروفایل @{username}...")
+        
+        # متد جایگزین سریع برای گرفتن عکس پروفایل بدون بلاک شدن
+        fallback_url = f"https://img.onl/instagram/profile/{username}"
+        try:
+            # بررسی اینکه آیا ابزار کمکی عکس رو میده یا نه
+            res = requests.get(fallback_url, timeout=7)
+            if res.status_code == 200 and len(res.content) > 1000:
+                bot.send_photo(message.chat.id, fallback_url, caption=f"📸 عکس پروفایل @{username} خدمت شما ✨", reply_markup=main_menu())
+                user_states[user_id] = None
+                return
+        except:
+            pass
+
+        # اگر متد بالا کار نکرد، میره روی حالت اصلی (yt-dlp)
         profile_link = f"https://instagram.com/{username}"
         download_and_send(message, profile_link, is_profile=True)
 
@@ -159,31 +174,31 @@ def download_and_send(message, link, is_profile=False, is_youtube=False):
     ydl_opts = {
         'outtmpl': f'downloads/{user_id}_%(id)s.%(ext)s', 
         'quiet': True, 
-        'no_warnings': True
+        'no_warnings': True,
+        # اضافه کردن هدر مرورگر معمولی برای فریب دادن اینستاگرام و جلوگیری از بلاک شدن آی‌پی
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        }
     }
     if is_youtube:
         ydl_opts['format'] = 'best'
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # برای پروفایل فقط اطلاعات رو استخراج میکنیم و دانلود فیزیکی نمیکنیم
             info = ydl.extract_info(link, download=not is_profile)
             
             if is_profile:
-                # تلاش برای پیدا کردن آدرس عکس پروفایل در جاهای مختلف پکیج داده‌ها
                 avatar_url = info.get('uploader_thumbnail') or info.get('thumbnail')
                 if not avatar_url and info.get('thumbnails'):
                     avatar_url = info['thumbnails'][-1].get('url')
 
                 if avatar_url:
-                    # ارسال مستقیم لینک عکس به تلگرام بدون نیاز به دانلود روی سرور
-                    bot.send_photo(message.chat.id, avatar_url, caption="📸 عکس پروفایل پیج مورد نظر خدمت شما ✨\n\n🔄 برای دانلود بعدی مجدد انتخاب کنید.", reply_markup=main_menu())
+                    bot.send_photo(message.chat.id, avatar_url, caption="📸 عکس پروفایل پیج مورد نظر خدمت شما ✨", reply_markup=main_menu())
                     user_states[user_id] = None
                 else:
                     bot.reply_to(message, "❌ عکس پروفایل پیدا نشد یا پیج خصوصی (Private) است.", reply_markup=back_menu())
                 return
 
-            # دانلود پست یا ویدیو معمولی
             if 'entries' in info:
                 for entry in info['entries']:
                     filename = ydl.prepare_filename(entry)
