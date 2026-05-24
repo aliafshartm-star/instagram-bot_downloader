@@ -1,312 +1,114 @@
 import os
-import re
-import asyncio
-import instaloader
+import telebot
+import yt_dlp
+from instaloader import Instaloader, Profile
 
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup
-)
+# --- تنظیمات اولیه ---
+BOT_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
+CHANNEL_ID = '@YourChannelID'  # 📢 آیدی کانال خودت رو اینجا بذار (مثلا @my_channel)
 
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    CallbackQueryHandler,
-    ContextTypes,
-    filters
-)
+bot = telebot.TeleBot(BOT_TOKEN)
+L = Instaloader()
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")
-
-DOWNLOAD_DIR = "downloads"
-
-os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-
-loader = instaloader.Instaloader(
-    download_pictures=True,
-    download_videos=True,
-    download_video_thumbnails=False,
-    save_metadata=False,
-    post_metadata_txt_pattern="",
-    quiet=True
-)
-
-loader.context.user_agent = (
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)"
-)
-
-# ---------------- FORCE JOIN ---------------- #
-
-async def check_join(bot, user_id):
-
+# 🔐 تابع بررسی عضویت اجباری
+def is_user_subbed(user_id):
     try:
-
-        member = await bot.get_chat_member(
-            CHANNEL_USERNAME,
-            user_id
-        )
-
-        return member.status in [
-            "member",
-            "administrator",
-            "creator"
-        ]
-
-    except:
+        # وضعیت کاربر در کانال رو بررسی میکنه
+        member = bot.get_chat_member(CHANNEL_ID, user_id)
+        # وضعیت‌های مجاز برای استفاده از ربات
+        if member.status in ['creator', 'administrator', 'member']:
+            return True
         return False
-
-async def force_join(update, context):
-
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                "📢 عضویت در کانال",
-                url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "✅ بررسی عضویت",
-                callback_data="check_join"
-            )
-        ]
-    ]
-
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    text = "❌ برای استفاده از ربات باید عضو کانال شوید."
-
-    if update.callback_query:
-
-        await update.callback_query.message.reply_text(
-            text,
-            reply_markup=reply_markup
-        )
-
-    else:
-
-        await update.message.reply_text(
-            text,
-            reply_markup=reply_markup
-        )
-
-# ---------------- START ---------------- #
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    joined = await check_join(
-        context.bot,
-        update.effective_user.id
-    )
-
-    if not joined:
-
-        await force_join(update, context)
-        return
-
-    await update.message.reply_text(
-        "🔥 لینک اینستاگرام یا آیدی پیج را ارسال کنید."
-    )
-
-# ---------------- BUTTON ---------------- #
-
-async def button_handler(update, context):
-
-    query = update.callback_query
-
-    await query.answer()
-
-    joined = await check_join(
-        context.bot,
-        query.from_user.id
-    )
-
-    if joined:
-
-        await query.message.reply_text(
-            "✅ عضویت تایید شد.\nحالا لینک یا آیدی بفرست."
-        )
-
-    else:
-
-        await force_join(update, context)
-
-# ---------------- DOWNLOAD ---------------- #
-
-async def handle_message(update, context):
-
-    joined = await check_join(
-        context.bot,
-        update.effective_user.id
-    )
-
-    if not joined:
-
-        await force_join(update, context)
-        return
-
-    text = update.message.text.strip()
-
-    try:
-
-        # ---------- INSTAGRAM POST / REEL ---------- #
-
-        if "instagram.com" in text:
-
-            wait_msg = await update.message.reply_text(
-                "⏳ در حال دانلود..."
-            )
-
-            match = re.search(
-                r"/(p|reel|tv)/([^/?]+)",
-                text
-            )
-
-            if not match:
-
-                await wait_msg.edit_text(
-                    "❌ لینک معتبر نیست."
-                )
-
-                return
-
-            shortcode = match.group(2)
-
-            post = instaloader.Post.from_shortcode(
-                loader.context,
-                shortcode
-            )
-
-            folder = os.path.join(
-                DOWNLOAD_DIR,
-                shortcode
-            )
-
-            loader.download_post(
-                post,
-                target=folder
-            )
-
-            await asyncio.sleep(2)
-
-            sent = False
-
-            for root, dirs, files in os.walk(folder):
-
-                for file in files:
-
-                    path = os.path.join(root, file)
-
-                    try:
-
-                        if file.endswith(".jpg"):
-
-                            await update.message.reply_photo(
-                                photo=open(path, "rb")
-                            )
-
-                            sent = True
-
-                        elif file.endswith(".mp4"):
-
-                            await update.message.reply_video(
-                                video=open(path, "rb")
-                            )
-
-                            sent = True
-
-                    except:
-                        pass
-
-            if sent:
-
-                await wait_msg.delete()
-
-            else:
-
-                await wait_msg.edit_text(
-                    "❌ فایل پیدا نشد."
-                )
-
-        # ---------- PROFILE PIC ---------- #
-
-        else:
-
-            wait_msg = await update.message.reply_text(
-                "⏳ در حال دریافت عکس پروفایل..."
-            )
-
-            username = text.replace("@", "")
-
-            profile = instaloader.Profile.from_username(
-                loader.context,
-                username
-            )
-
-            loader.download_profilepic(profile)
-
-            found = False
-
-            for file in os.listdir():
-
-                if file.startswith(username) and file.endswith(".jpg"):
-
-                    await update.message.reply_photo(
-                        photo=open(file, "rb")
-                    )
-
-                    found = True
-                    break
-
-            if found:
-
-                await wait_msg.delete()
-
-            else:
-
-                await wait_msg.edit_text(
-                    "❌ عکس پروفایل پیدا نشد."
-                )
-
     except Exception as e:
+        # اگر خطایی داد (مثلا ربات ادمین کانال نباشه) برای اینکه ربات قفل نشه True برمیگردونه
+        print(f"خطا در بررسی عضویت کانال: {e}")
+        return True
 
-        await update.message.reply_text(
-            f"❌ خطا:\n{str(e)}"
-        )
-
-# ---------------- MAIN ---------------- #
-
-def main():
-
-    asyncio.set_event_loop(
-        asyncio.new_event_loop()
+# پیام خوش‌آمدگویی
+@bot.message_handler(commands=['start', 'help'])
+def send_welcome(message):
+    welcome_text = (
+        "سلام! به ربات دانلودر اینستاگرام خوش اومدی. 🚀\n\n"
+        "📥 **دانلود پست و ریلز:** فقط کافیه لینک پست رو برام بفرستی.\n"
+        "📸 **دانلود عکس پروفایل:** فقط کافیه آیدی (یوزرنیم) پیج رو بفرستی."
     )
+    bot.reply_to(message, welcome_text, parse_mode='Markdown')
 
-    app = ApplicationBuilder().token(
-        BOT_TOKEN
-    ).build()
+# مدیریت پیام‌های ورودی
+@bot.message_handler(func=lambda message: True)
+def handle_message(message):
+    user_id = message.from_user.id
+    
+    # 1. اول چک میکنیم کاربر عضو کانال هست یا نه
+    if not is_user_subbed(user_id):
+        # اگر عضو نبود، این پیام رو براش میفرستیم و دیگه بقیه کد اجرا نمیشه
+        msg = f"⚠️ برای استفاده از این ربات، ابتدا باید عضو کانال ما شوید:\n\n📢 {CHANNEL_ID}\n\nبعد از عضویت، مجدداً لینک یا یوزرنیم خود را بفرستید."
+        bot.reply_to(message, msg)
+        return # خروج از تابع
 
-    app.add_handler(
-        CommandHandler("start", start)
-    )
+    # 2. اگر عضو بود، بقیه مراحل دانلود اجرا میشه:
+    text = message.text.strip()
 
-    app.add_handler(
-        CallbackQueryHandler(button_handler)
-    )
+    # تشخیص لینک اینستاگرام
+    if "instagram.com" in text:
+        bot.reply_to(message, "⏳ در حال دانلود پست/ریلز...")
+        
+        ydl_opts = {
+            'outtmpl': f'downloads/{message.chat.id}_%(id)s.%(ext)s',
+            'quiet': True,
+        }
+        
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(text, download=True)
+                
+                if 'entries' in info:
+                    for entry in info['entries']:
+                        filename = ydl.prepare_filename(entry)
+                        send_file(message.chat.id, filename)
+                else:
+                    filename = ydl.prepare_filename(info)
+                    send_file(message.chat.id, filename)
+                    
+        except Exception as e:
+            bot.reply_to(message, "❌ خطایی در دانلود پست رخ داد. مطمئن شو پیج عمومی (Public) باشه.")
+            
+    else:
+        # بخش دانلود عکس پروفایل
+        username = text.replace("@", "")
+        bot.reply_to(message, f"⏳ در حال دریافت عکس پروفایل @{username}...")
+        
+        try:
+            profile = Profile.from_username(L.context, username)
+            profile_url = profile.profile_pic_url
+            
+            bot.send_photo(
+                message.chat.id, 
+                profile_url, 
+                caption=f"📸 عکس پروفایل کیفیت اصلی @{username}\n\n👤 نام: {profile.full_name}\n👥 فالوورز: {profile.followers:,}"
+            )
+        except Exception as e:
+            bot.reply_to(message, "❌ پیج پیدا نشد یا خطایی رخ داد. مطمئن شو یوزرنیم رو درست فرستادی.")
 
-    app.add_handler(
-        MessageHandler(
-            filters.TEXT & ~filters.COMMAND,
-            handle_message
-        )
-    )
+# تابع ارسال فایل و حذف از سرور
+def send_file(chat_id, filepath):
+    if not os.path.exists(filepath):
+        return
+    try:
+        if filepath.endswith(('.mp4', '.mov', '.mkv')):
+            with open(filepath, 'rb') as video:
+                bot.send_video(chat_id, video)
+        else:
+            with open(filepath, 'rb') as photo:
+                bot.send_photo(chat_id, photo)
+    except Exception as e:
+        print(f"Error sending file: {e}")
+    finally:
+        if os.path.exists(filepath):
+            os.remove(filepath)
 
-    print("Bot Started...")
+if not os.path.exists('downloads'):
+    os.makedirs('downloads')
 
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
+print("ربات با سیستم عضویت اجباری روشن شد...")
+bot.infinity_polling()
