@@ -1,4 +1,3 @@
-
 import os
 import re
 import asyncio
@@ -33,9 +32,10 @@ loader = instaloader.Instaloader(
     post_metadata_txt_pattern=""
 )
 
-
 async def check_join(bot, user_id):
+
     try:
+
         member = await bot.get_chat_member(
             CHANNEL_USERNAME,
             user_id
@@ -50,8 +50,8 @@ async def check_join(bot, user_id):
     except:
         return False
 
-
 async def force_join(update, context):
+
     keyboard = [
         [
             InlineKeyboardButton(
@@ -67,23 +67,23 @@ async def force_join(update, context):
         ]
     ]
 
-    text = (
-        "❌ برای استفاده از ربات باید عضو کانال شوید."
-    )
-
     reply_markup = InlineKeyboardMarkup(keyboard)
 
+    text = "❌ برای استفاده از ربات باید عضو کانال شوید."
+
     if update.callback_query:
+
         await update.callback_query.message.reply_text(
             text,
             reply_markup=reply_markup
         )
+
     else:
+
         await update.message.reply_text(
             text,
             reply_markup=reply_markup
         )
-
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -93,6 +93,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     if not joined:
+
         await force_join(update, context)
         return
 
@@ -100,8 +101,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✅ لینک اینستاگرام یا آیدی پیج را ارسال کنید."
     )
 
-
 async def button_handler(update, context):
+
     query = update.callback_query
 
     await query.answer()
@@ -112,12 +113,14 @@ async def button_handler(update, context):
     )
 
     if joined:
-        await query.message.reply_text(
-            "✅ عضویت تایید شد. حالا لینک بفرست."
-        )
-    else:
-        await force_join(update, context)
 
+        await query.message.reply_text(
+            "✅ عضویت تایید شد."
+        )
+
+    else:
+
+        await force_join(update, context)
 
 async def handle_message(update, context):
 
@@ -127,6 +130,7 @@ async def handle_message(update, context):
     )
 
     if not joined:
+
         await force_join(update, context)
         return
 
@@ -163,11 +167,13 @@ async def handle_message(update, context):
                 path = os.path.join(folder, file)
 
                 if file.endswith(".jpg"):
+
                     await update.message.reply_photo(
                         photo=open(path, "rb")
                     )
 
                 elif file.endswith(".mp4"):
+
                     await update.message.reply_video(
                         video=open(path, "rb")
                     )
@@ -196,11 +202,14 @@ async def handle_message(update, context):
     except Exception as e:
 
         await update.message.reply_text(
-            f"❌ خطا:\n{str(e)}"
+            f"❌ خطا:\\n{str(e)}"
         )
 
-
 def main():
+
+    asyncio.set_event_loop(
+        asyncio.new_event_loop()
+    )
 
     app = ApplicationBuilder().token(
         BOT_TOKEN
@@ -224,7 +233,6 @@ def main():
     print("Bot Started...")
 
     app.run_polling()
-
 
 if __name__ == "__main__":
     main()
