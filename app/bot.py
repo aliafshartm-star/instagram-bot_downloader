@@ -28,9 +28,17 @@ os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 loader = instaloader.Instaloader(
     download_pictures=True,
     download_videos=True,
+    download_video_thumbnails=False,
     save_metadata=False,
-    post_metadata_txt_pattern=""
+    post_metadata_txt_pattern="",
+    quiet=True
 )
+
+loader.context.user_agent = (
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)"
+)
+
+# ---------------- FORCE JOIN ---------------- #
 
 async def check_join(bot, user_id):
 
@@ -55,13 +63,13 @@ async def force_join(update, context):
     keyboard = [
         [
             InlineKeyboardButton(
-                "عضویت در کانال",
-                url=f"https://t.me/{CHANNEL_USERNAME.replace('@','')}"
+                "📢 عضویت در کانال",
+                url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}"
             )
         ],
         [
             InlineKeyboardButton(
-                "بررسی عضویت",
+                "✅ بررسی عضویت",
                 callback_data="check_join"
             )
         ]
@@ -85,6 +93,8 @@ async def force_join(update, context):
             reply_markup=reply_markup
         )
 
+# ---------------- START ---------------- #
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     joined = await check_join(
@@ -98,8 +108,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text(
-        "✅ لینک اینستاگرام یا آیدی پیج را ارسال کنید."
+        "🔥 لینک اینستاگرام یا آیدی پیج را ارسال کنید."
     )
+
+# ---------------- BUTTON ---------------- #
 
 async def button_handler(update, context):
 
@@ -115,12 +127,14 @@ async def button_handler(update, context):
     if joined:
 
         await query.message.reply_text(
-            "✅ عضویت تایید شد."
+            "✅ عضویت تایید شد.\nحالا لینک یا آیدی بفرست."
         )
 
     else:
 
         await force_join(update, context)
+
+# ---------------- DOWNLOAD ---------------- #
 
 async def handle_message(update, context):
 
@@ -138,12 +152,28 @@ async def handle_message(update, context):
 
     try:
 
-        if "instagram.com/p/" in text or "instagram.com/reel/" in text:
+        # ---------- INSTAGRAM POST / REEL ---------- #
 
-            shortcode = re.search(
-                r"(?:p|reel)/([^/?]+)",
+        if "instagram.com" in text:
+
+            wait_msg = await update.message.reply_text(
+                "⏳ در حال دانلود..."
+            )
+
+            match = re.search(
+                r"/(p|reel|tv)/([^/?]+)",
                 text
-            ).group(1)
+            )
+
+            if not match:
+
+                await wait_msg.edit_text(
+                    "❌ لینک معتبر نیست."
+                )
+
+                return
+
+            shortcode = match.group(2)
 
             post = instaloader.Post.from_shortcode(
                 loader.context,
@@ -160,25 +190,54 @@ async def handle_message(update, context):
                 target=folder
             )
 
-            await asyncio.sleep(1)
+            await asyncio.sleep(2)
 
-            for file in os.listdir(folder):
+            sent = False
 
-                path = os.path.join(folder, file)
+            for root, dirs, files in os.walk(folder):
 
-                if file.endswith(".jpg"):
+                for file in files:
 
-                    await update.message.reply_photo(
-                        photo=open(path, "rb")
-                    )
+                    path = os.path.join(root, file)
 
-                elif file.endswith(".mp4"):
+                    try:
 
-                    await update.message.reply_video(
-                        video=open(path, "rb")
-                    )
+                        if file.endswith(".jpg"):
+
+                            await update.message.reply_photo(
+                                photo=open(path, "rb")
+                            )
+
+                            sent = True
+
+                        elif file.endswith(".mp4"):
+
+                            await update.message.reply_video(
+                                video=open(path, "rb")
+                            )
+
+                            sent = True
+
+                    except:
+                        pass
+
+            if sent:
+
+                await wait_msg.delete()
+
+            else:
+
+                await wait_msg.edit_text(
+                    "❌ فایل پیدا نشد."
+                )
+
+        # ---------- PROFILE PIC ---------- #
 
         else:
+
+            wait_msg = await update.message.reply_text(
+                "⏳ در حال دریافت عکس پروفایل..."
+            )
 
             username = text.replace("@", "")
 
@@ -189,6 +248,8 @@ async def handle_message(update, context):
 
             loader.download_profilepic(profile)
 
+            found = False
+
             for file in os.listdir():
 
                 if file.startswith(username) and file.endswith(".jpg"):
@@ -197,13 +258,26 @@ async def handle_message(update, context):
                         photo=open(file, "rb")
                     )
 
+                    found = True
                     break
+
+            if found:
+
+                await wait_msg.delete()
+
+            else:
+
+                await wait_msg.edit_text(
+                    "❌ عکس پروفایل پیدا نشد."
+                )
 
     except Exception as e:
 
         await update.message.reply_text(
-            f"❌ خطا:\\n{str(e)}"
+            f"❌ خطا:\n{str(e)}"
         )
+
+# ---------------- MAIN ---------------- #
 
 def main():
 
