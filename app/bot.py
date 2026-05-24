@@ -7,7 +7,7 @@ from flask import Flask
 
 # ================= ⚙️ دریافت تنظیمات از ENV رندر =================
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
-CHANNEL_ID = os.environ.get('CHANNEL_ID', '@YourChannel') # اگر خالی بود یک مقدار پیش‌فرض می‌گذارد تا کرش نکند
+CHANNEL_ID = os.environ.get('CHANNEL_ID', '@YourChannel')
 # ===============================================================
 
 bot = telebot.TeleBot(BOT_TOKEN)
@@ -53,7 +53,6 @@ def main_menu():
 # 📢 ساخت دکمه عضویت اجباری
 def sub_menu():
     markup = InlineKeyboardMarkup()
-    # جلوگیری از ارور replace در صورتی که CHANNEL_ID خالی یا اشتباه باشد
     str_channel = str(CHANNEL_ID) if CHANNEL_ID else "@YourChannel"
     clean_channel = str_channel.replace("@", "")
     markup.add(InlineKeyboardButton("📢 عضویت در کانال ما", url=f"https://t.me/{clean_channel}"))
@@ -132,6 +131,7 @@ def handle_links(message):
         return
 
     if state == "insta_profile":
+        # استخراج آیدی خالص
         username = text.replace("https://", "").replace("instagram.com/", "").split("/")[0].replace("@", "")
         bot.reply_to(message, f"⏳ در حال دریافت عکس پروفایل @{username}...")
         profile_link = f"https://instagram.com/{username}"
@@ -155,22 +155,35 @@ def download_and_send(message, link, is_profile=False, is_youtube=False):
     user_id = message.from_user.id
     if not os.path.exists('downloads'):
         os.makedirs('downloads')
-    ydl_opts = {'outtmpl': f'downloads/{user_id}_%(id)s.%(ext)s', 'quiet': True, 'no_warnings': True}
+        
+    ydl_opts = {
+        'outtmpl': f'downloads/{user_id}_%(id)s.%(ext)s', 
+        'quiet': True, 
+        'no_warnings': True
+    }
     if is_youtube:
         ydl_opts['format'] = 'best'
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # برای پروفایل فقط اطلاعات رو استخراج میکنیم و دانلود فیزیکی نمیکنیم
             info = ydl.extract_info(link, download=not is_profile)
+            
             if is_profile:
-                avatar_url = info.get('uploader_thumbnail') or info.get('thumbnails', [{}])[0].get('url')
+                # تلاش برای پیدا کردن آدرس عکس پروفایل در جاهای مختلف پکیج داده‌ها
+                avatar_url = info.get('uploader_thumbnail') or info.get('thumbnail')
+                if not avatar_url and info.get('thumbnails'):
+                    avatar_url = info['thumbnails'][-1].get('url')
+
                 if avatar_url:
-                    bot.send_photo(message.chat.id, avatar_url, caption="📸 عکس پروفایل پیج مورد نظر خدمت شما ✨", reply_markup=main_menu())
+                    # ارسال مستقیم لینک عکس به تلگرام بدون نیاز به دانلود روی سرور
+                    bot.send_photo(message.chat.id, avatar_url, caption="📸 عکس پروفایل پیج مورد نظر خدمت شما ✨\n\n🔄 برای دانلود بعدی مجدد انتخاب کنید.", reply_markup=main_menu())
                     user_states[user_id] = None
                 else:
-                    bot.reply_to(message, "❌ عکس پروفایل پیدا نشد. مطمئن شو پیج عمومی باشه.", reply_markup=back_menu())
+                    bot.reply_to(message, "❌ عکس پروفایل پیدا نشد یا پیج خصوصی (Private) است.", reply_markup=back_menu())
                 return
 
+            # دانلود پست یا ویدیو معمولی
             if 'entries' in info:
                 for entry in info['entries']:
                     filename = ydl.prepare_filename(entry)
@@ -178,8 +191,10 @@ def download_and_send(message, link, is_profile=False, is_youtube=False):
             else:
                 filename = ydl.prepare_filename(info)
                 send_file(message.chat.id, filename)
+                
             bot.send_message(message.chat.id, "✅ دانلود با موفقیت انجام شد!", reply_markup=main_menu())
             user_states[user_id] = None 
+            
     except Exception as e:
         print(f"Global Download Error: {e}")
         bot.reply_to(message, "❌ خطایی در دانلود رخ داد! مطمئن شوید لینک/آیدی درست و پیج عمومی است.", reply_markup=back_menu())
