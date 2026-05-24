@@ -1,7 +1,9 @@
-
 services:
   - type: web
-    name: instagram-downloader-bot
+    name: insta-downloader-bot
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python app/bot.py
+    startCommand: python bot.py
+    envVars:
+      - key: PORT
+        value: 8080
