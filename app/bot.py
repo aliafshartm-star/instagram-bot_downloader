@@ -7,26 +7,24 @@ from flask import Flask
 
 # ================= ⚙️ دریافت تنظیمات از ENV رندر =================
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
-CHANNEL_ID = os.environ.get('CHANNEL_ID')
+CHANNEL_ID = os.environ.get('CHANNEL_ID', '@YourChannel') # اگر خالی بود یک مقدار پیش‌فرض می‌گذارد تا کرش نکند
 # ===============================================================
 
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask('')
 
-# ذخیره وضعیت موقت کاربران
 user_states = {}
-# برای اینکه یادت بمونه کاربر دکمه تایید رو زده یا نه
 user_verified = {}
 
 @app.route('/')
 def home():
-    return "ربات با موفقیت آپدیت شد! 🚀"
+    return "ربات چندرسانه‌ای با موفقیت روشن شد! 🚀"
 
 def run_web_server():
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
-# 🔐 تابع بررسی سیستم عضویت اجباری در تلگرام
+# 🔐 تابع بررسی سیستم عضویت اجباری
 def is_user_subbed(user_id):
     try:
         member = bot.get_chat_member(CHANNEL_ID, user_id)
@@ -55,7 +53,9 @@ def main_menu():
 # 📢 ساخت دکمه عضویت اجباری
 def sub_menu():
     markup = InlineKeyboardMarkup()
-    clean_channel = CHANNEL_ID.replace("@", "")
+    # جلوگیری از ارور replace در صورتی که CHANNEL_ID خالی یا اشتباه باشد
+    str_channel = str(CHANNEL_ID) if CHANNEL_ID else "@YourChannel"
+    clean_channel = str_channel.replace("@", "")
     markup.add(InlineKeyboardButton("📢 عضویت در کانال ما", url=f"https://t.me/{clean_channel}"))
     markup.add(InlineKeyboardButton("✅ تایید عضویت و ورود", callback_data="check_sub"))
     return markup
@@ -66,12 +66,12 @@ def back_menu():
     markup.add(InlineKeyboardButton("🔙 برگشت به منوی اصلی", callback_data="go_to_main"))
     return markup
 
-# 🏁 دستور /start (حالا در اولین بار قطعا قفل کانال را به همه نشان می‌دهد)
+# 🏁 دستور /start
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     user_id = message.from_user.id
     user_states[user_id] = None 
-    user_verified[user_id] = False # در هر استارت، کاربر باید دوباره تایید بزند
+    user_verified[user_id] = False 
 
     msg = f"⚠️ کاربر گرامی!\nبرای استفاده از خدمات ربات، ابتدا باید عضو کانال زیر شوید و سپس دکمه تایید را بزنید:"
     bot.send_message(message.chat.id, msg, reply_markup=sub_menu())
@@ -82,28 +82,24 @@ def callback_listener(call):
     user_id = call.from_user.id
     chat_id = call.message.chat.id
 
-    # دکمه تایید عضویت
     if call.data == "check_sub":
         if is_user_subbed(user_id):
-            user_verified[user_id] = True # کاربر تایید شد
+            user_verified[user_id] = True 
             bot.answer_callback_query(call.id, "✅ عضویت شما تایید شد!")
             bot.edit_message_text("سلام! به ربات دانلودر پیشرفته خوش آمدید. 🚀\nلطفاً یکی از گزینه‌های زیر را برای دانلود انتخاب کنید 👇", chat_id, call.message.message_id, reply_markup=main_menu())
         else:
             bot.answer_callback_query(call.id, "❌ شما هنوز عضو کانال نشده‌اید یا ربات در کانال ادمین نیست!", show_alert=True)
         return
 
-    # دکمه برگشت به منوی اصلی
     if call.data == "go_to_main":
         user_states[user_id] = None
         bot.edit_message_text("منوی اصلی ربات خدمت شما 👇\nلطفاً یک گزینه را انتخاب کنید:", chat_id, call.message.message_id, reply_markup=main_menu())
         return
 
-    # محافظت امنیتی: اگر دکمه‌های دیگر را زد ولی تایید نشده بود
     if not user_verified.get(user_id, False) or not is_user_subbed(user_id):
         bot.answer_callback_query(call.id, "⚠️ ابتدا باید عضویت خود را تایید کنید!")
         return
 
-    # منوهای دانلود
     if call.data == "down_insta_profile":
         user_states[user_id] = "insta_profile"
         bot.edit_message_text("📸 **دانلود عکس پروفایل اینستاگرام**\n\n👤 لطفاً **آیدی (یوزرنیم)** پیج مورد نظر را بفرستید:\n(مثال: `cristiano`)", chat_id, call.message.message_id, parse_mode='Markdown', reply_markup=back_menu())
@@ -127,7 +123,6 @@ def handle_links(message):
     text = message.text.strip()
     state = user_states.get(user_id)
 
-    # بررسی اینکه آیا دکمه تایید را قبلا زده یا خیر
     if not user_verified.get(user_id, False) or not is_user_subbed(user_id):
         bot.reply_to(message, "⚠️ شما هنوز عضویت خود را تایید نکرده‌اید!", reply_markup=sub_menu())
         return
@@ -136,7 +131,6 @@ def handle_links(message):
         bot.reply_to(message, "❌ لطفاً ابتدا از منوی اصلی مشخص کنید چه چیزی می‌خواهید دانلود کنید 👇", reply_markup=main_menu())
         return
 
-    # پردازش دانلود بر اساس وضعیت کاربر
     if state == "insta_profile":
         username = text.replace("https://", "").replace("instagram.com/", "").split("/")[0].replace("@", "")
         bot.reply_to(message, f"⏳ در حال دریافت عکس پروفایل @{username}...")
@@ -157,30 +151,21 @@ def handle_links(message):
         else:
             bot.reply_to(message, "❌ لطفاً لینک معتبر یوتیوب بفرستید.", reply_markup=back_menu())
 
-# 📥 تابع دانلود و ارسال
 def download_and_send(message, link, is_profile=False, is_youtube=False):
     user_id = message.from_user.id
-    
     if not os.path.exists('downloads'):
         os.makedirs('downloads')
-        
-    ydl_opts = {
-        'outtmpl': f'downloads/{user_id}_%(id)s.%(ext)s',
-        'quiet': True,
-        'no_warnings': True,
-    }
-    
+    ydl_opts = {'outtmpl': f'downloads/{user_id}_%(id)s.%(ext)s', 'quiet': True, 'no_warnings': True}
     if is_youtube:
         ydl_opts['format'] = 'best'
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(link, download=not is_profile)
-            
             if is_profile:
                 avatar_url = info.get('uploader_thumbnail') or info.get('thumbnails', [{}])[0].get('url')
                 if avatar_url:
-                    bot.send_photo(message.chat.id, avatar_url, caption="📸 عکس پروفایل پیج مورد نظر خدمت شما ✨\n\n🔄 برای دانلود مجدد از منو انتخاب کنید.", reply_markup=main_menu())
+                    bot.send_photo(message.chat.id, avatar_url, caption="📸 عکس پروفایل پیج مورد نظر خدمت شما ✨", reply_markup=main_menu())
                     user_states[user_id] = None
                 else:
                     bot.reply_to(message, "❌ عکس پروفایل پیدا نشد. مطمئن شو پیج عمومی باشه.", reply_markup=back_menu())
@@ -193,10 +178,8 @@ def download_and_send(message, link, is_profile=False, is_youtube=False):
             else:
                 filename = ydl.prepare_filename(info)
                 send_file(message.chat.id, filename)
-                
             bot.send_message(message.chat.id, "✅ دانلود با موفقیت انجام شد!", reply_markup=main_menu())
             user_states[user_id] = None 
-            
     except Exception as e:
         print(f"Global Download Error: {e}")
         bot.reply_to(message, "❌ خطایی در دانلود رخ داد! مطمئن شوید لینک/آیدی درست و پیج عمومی است.", reply_markup=back_menu())
@@ -221,7 +204,6 @@ if __name__ == '__main__':
     server_thread = Thread(target=run_web_server)
     server_thread.daemon = True
     server_thread.start()
-    
     try:
         bot.infinity_polling()
     except Exception as e:
