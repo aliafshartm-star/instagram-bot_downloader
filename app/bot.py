@@ -5,23 +5,19 @@ from instaloader import Instaloader, Profile
 from threading import Thread
 from flask import Flask
 
-# ================= ⚙️ تنظیمات اصلی ربات =================
-# ۱. توکن ربات تلگرام خود را بین کوتیشن قرار دهید
-BOT_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
-
-# ۲. آیدی کانال برای عضویت اجباری (ربات باید در این کانال ادمین باشد)
-CHANNEL_ID = '@YourChannelID'  
-# =======================================================
+# ================= ⚙️ دریافت تنظیمات از ENV رندر =================
+# پایتون به صورت خودکار اطلاعات را از منوی Environment رندر می‌خواند
+BOT_TOKEN = os.environ.get('BOT_TOKEN')
+CHANNEL_ID = os.environ.get('CHANNEL_ID')
+# ===============================================================
 
 bot = telebot.TeleBot(BOT_TOKEN)
 L = Instaloader()
-
-# ساخت سرور وب داخلی جهت جلوگیری از ارور پورت در رندر
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot is running perfectly on Render! 🚀"
+    return "ربات اینستاگرام با موفقیت روشن شد و در حال کار است! 🚀"
 
 def run_web_server():
     port = int(os.environ.get("PORT", 8080))
@@ -35,7 +31,7 @@ def is_user_subbed(user_id):
             return True
         return False
     except Exception as e:
-        print(f"⚠️ Channel Check Error: {e}")
+        print(f"⚠️ Channel Check Error (Check if bot is admin): {e}")
         return True
 
 # 📜 دستورات آغازین ربات
@@ -83,6 +79,7 @@ def handle_message(message):
                     filename = ydl.prepare_filename(info)
                     send_file(message.chat.id, filename)
         except Exception as e:
+            print(f"Download Error: {e}")
             bot.reply_to(message, "❌ خطایی در دانلود رخ داد! مطمئن شو لینک درست و پیج عمومی باشه.")
             
     else:
@@ -93,7 +90,8 @@ def handle_message(message):
             caption_text = f"📸 عکس پروفایل @{username}\n\n👤 نام: {profile.full_name}\n👥 فالوورها: {profile.followers:,}"
             bot.send_photo(message.chat.id, profile.profile_pic_url, caption=caption_text)
         except Exception as e:
-            bot.reply_to(message, "❌ پیج پیدا نشد یا خطایی رخ داد.")
+            print(f"Profile Error: {e}")
+            bot.reply_to(message, "❌ پیج پیدا نشد یا خطایی رخ داد. نام کاربری را بدون علامت اضافی بفرستید.")
 
 def send_file(chat_id, filepath):
     if not os.path.exists(filepath):
@@ -116,10 +114,10 @@ if __name__ == '__main__':
     server_thread.daemon = True
     server_thread.start()
     
-    print("🔍 در حال اتصال به تلگرام...")
+    print("🔍 در حال بررسی و اتصال به تلگرام...")
     try:
         bot_info = bot.get_me()
-        print(f"✅ ربات @{bot_info.username} بدون خطا روشن شد.")
+        print(f"✅ اتصال موفقیت‌آمیز بود! ربات @{bot_info.username} بدون خطا روشن شد.")
         bot.infinity_polling()
     except Exception as e:
         print(f"❌ خطا در روشن شدن ربات: {e}")
